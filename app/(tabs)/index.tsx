@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
 import { Platform, StyleSheet, Text, View, Dimensions, Animated, TouchableOpacity } from 'react-native';
 import { HelloWave } from '@/components/hello-wave';
+import { MatchModal } from '@/components/match-modal';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { AntDesign } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
@@ -11,6 +12,9 @@ import axios from 'axios'
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Swiper, type SwiperCardRefType } from 'rn-swiper-list';
 import { useSharedValue, useAnimatedStyle, interpolateColor } from 'react-native-reanimated';
+import { ref as dbRef, get, onValue, set } from "firebase/database";
+import { db } from "../../backend/firebase.js"
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function HomeScreen() {
   const token = process.env.EXPO_PUBLIC_ACCESS_TOKEN;
@@ -22,10 +26,55 @@ const ref = useRef<SwiperCardRefType>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const getPersistentUsername = async () => {
+  let stored = await AsyncStorage.getItem("username");
+
+  if (stored) return stored;
+
+  const adjectives = ['Cool', 'Mysterious', 'Adventurous', 'Charming', 'Witty'];
+  const nouns = ['Explorer', 'Dreamer', 'Warrior', 'Sage', 'Nomad'];
+
+  const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+  const newName = `${randomAdjective}${randomNoun}${Math.floor(Math.random() * 1000)}`;
+
+  await AsyncStorage.setItem("username", newName);
+  return newName;
+};
+
+const [username, setUsername] = useState<string | null>(null);
+
+useEffect(() => {
+  (async () => {
+    const name = await getPersistentUsername();
+    setUsername(name);
+    set(dbRef(db, `rooms/1/users/${name}`), true);
+
+  })();
+}, []);
+
+  const [isMatchModalVisible, setIsMatchModalVisible] = useState(false);
+  const [matchedMovieId, setMatchedMovieId] = useState<string | null>(null);
+
   useEffect(() => {
-    console.log("Progress value:", progress.value);
-  }, [progress]);
-  useEffect(() => {
+    const matchRef = dbRef(db, `rooms/1/matches`);
+
+    const unsubscribe = onValue(matchRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      // ultimo film match trovato
+      const movieIds = Object.keys(data);
+      const lastMatchMovieId = movieIds[movieIds.length - 1];
+
+      console.log("🔥 MATCH FOUND:", lastMatchMovieId);
+      setMatchedMovieId(lastMatchMovieId);
+      setIsMatchModalVisible(true);
+    });
+
+    // quando componente si smonta → chiudi listener
+    return () => unsubscribe();
+  }, []);  useEffect(() => {
     const fetchData = async () => {
       if (!token) {
         setError('API token not found');
@@ -55,6 +104,37 @@ const ref = useRef<SwiperCardRefType>(null);
     };
     fetchData();
   }, [token]);
+
+  const sendFeedback = async (movieId: number, feedback: 'like' | 'dislike') => {
+    try {
+      await set(dbRef(db, `rooms/1/swipes/${username}/${movieId}`), feedback === 'like' ? 1 : -1);
+      console.log(`Feedback for movie ${movieId} recorded as ${feedback}`);
+
+      checkFeedbacksForMatch(movieId)
+    } catch (error) {
+      console.error('Error sending feedback:', error);
+    }
+  }
+
+  async function checkFeedbacksForMatch(movieId: number) {
+    const usersSnap = await get(dbRef(db, `rooms/1/users`));
+  const users = Object.keys(usersSnap.val());
+  console.log("Checking matches between users:", users);
+
+  const otherUser = users.find(u => u !== username);
+
+    const otherSnap = await get(dbRef(db, `rooms/1/swipes/${otherUser}/${movieId}`));
+
+    console.log(`Other user's feedback for movie ${movieId}:`, otherSnap.val());
+    if (otherSnap.exists() && otherSnap.val() === 1) {
+    // match!
+    await set(dbRef(db, `rooms/1/matches/${movieId}`), {
+      timestamp: Date.now()
+    });
+
+  }
+
+  }
 
   const renderCard = (movie: Movie) => (
   <View style={styles.card}>
@@ -188,6 +268,12 @@ const ref = useRef<SwiperCardRefType>(null);
 
   return (
     <>
+      <MatchModal
+        visible={isMatchModalVisible}
+        onClose={() => setIsMatchModalVisible(false)}
+        movieId={matchedMovieId || ''}
+        movieImage={matchedMovieId ? `https://image.tmdb.org/t/p/w500${movies.find(m => m.id.toString() === matchedMovieId)?.poster_path}` : ''}
+      />
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <Swiper
@@ -206,8 +292,8 @@ const ref = useRef<SwiperCardRefType>(null);
           
 OverlayLabelRight={OverlayLabelRight}
 OverlayLabelLeft={OverlayLabelLeft}
-          onSwipeRight={(i) => console.log("RIGHT:", movies[i].title)}
-          onSwipeLeft={(i) => console.log("LEFT:", movies[i].title)}
+          onSwipeRight={(i) => sendFeedback(movies[i].id, 'like')}
+          onSwipeLeft={(i) => sendFeedback(movies[i].id, 'dislike')}
         />
       </View>
     </GestureHandlerRootView>
@@ -246,7 +332,7 @@ const styles = StyleSheet.create({
   },
   card: {
      width: '100%',
-    height: '100%',
+    height: '90%',
     backgroundColor: 'white',
     borderRadius: 16,
     shadowColor: '#000',
@@ -261,9 +347,10 @@ const styles = StyleSheet.create({
   },
   movieImage: {
     width: '100%',
-    height: '65%',
+    height: '75%',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
+    
   },
   movieInfo: {
     padding: 12,
@@ -342,7 +429,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: '#ffffff',
     width: '100%',
-    height: '100%',
+    height: '90%',
     padding: 20,
   },
   flippedTitle: {
