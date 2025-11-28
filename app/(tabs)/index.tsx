@@ -1,12 +1,13 @@
 import { Image } from 'expo-image';
 import { Platform, StyleSheet, Text, View, Dimensions, Animated, TouchableOpacity } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient'; // Aggiungi questo import
 import { HelloWave } from '@/components/hello-wave';
 import { MatchModal } from '@/components/match-modal';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { AntDesign } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { Link, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios'
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -15,8 +16,18 @@ import { useSharedValue, useAnimatedStyle, interpolateColor } from 'react-native
 import { ref as dbRef, get, onValue, set } from "firebase/database";
 import { db } from "../../backend/firebase.js"
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GENRES } from '../utils/genres';
 
 export default function HomeScreen() {
+  const { sessionId } = useLocalSearchParams();
+
+  useEffect(() => {
+    if (sessionId) {
+      console.log("Sono nella sessione con ID:", sessionId);
+      // Qui puoi aggiungere la logica per gestire la sessione
+    }
+  }, [sessionId]);
+
   const token = process.env.EXPO_PUBLIC_ACCESS_TOKEN;
   const progress = useSharedValue(0);
 const x = useSharedValue(0);
@@ -89,9 +100,11 @@ useEffect(() => {
             Accept: 'application/json'
           },
         });
+
         
         if (response.data && Array.isArray(response.data.results)) {
           setMovies(response.data.results);
+          console.log('Movies fetched:', response.data.results[0]);
         } else {
           setError('Invalid data format received');
         }
@@ -137,23 +150,34 @@ useEffect(() => {
   }
 
   const renderCard = (movie: Movie) => (
-  <View style={styles.card}>
-    <Image
-      style={styles.movieImage}
-      source={{ uri: `https://image.tmdb.org/t/p/w500${movie.poster_path}` }}
-      contentFit="cover"
-      transition={1000}
-    />
-    <View style={styles.movieInfo}>
-      <Text style={styles.movieTitle}>{movie.title}</Text>
-      <View style={styles.movieMeta}>
-        <Text style={styles.movieRating}>★ {movie.vote_average.toFixed(1)}</Text>
-        <Text style={styles.movieDate}>{new Date(movie.release_date).getFullYear()}</Text>
-      </View>
-      <Text style={styles.movieOverview} numberOfLines={3}>{movie.overview}</Text>
+    <View style={styles.card}>
+      <Image
+        style={styles.movieImage}
+        source={{ uri: `https://image.tmdb.org/t/p/w500${movie.poster_path}` }}
+        contentFit="cover"
+        transition={1000}
+      />
+      
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.95)']}
+        style={styles.gradientOverlay}
+      >
+        <View style={styles.movieInfo}>
+          
+          <View style={styles.movieMeta}>
+            <Text style={styles.movieRating}>★ {movie.vote_average.toFixed(1)}</Text>
+            <Text style={styles.movieDate}>{new Date(movie.release_date).getFullYear()}</Text>
+         <View style={styles.movieGenre}>
+          <Text style={styles.movieGenreText}>{GENRES[movie.genre_ids[1]]}</Text>          
+          </View>
+          </View>
+          <Text style={styles.movieTitle}>{movie.title}</Text>
+          
+          <Text style={styles.movieOverview} numberOfLines={3}>{movie.overview}</Text>
+        </View>
+      </LinearGradient>
     </View>
-  </View>
-);
+  );
 
  const renderFlippedCard = useCallback(
     (item: Movie, index: number) => {
@@ -331,58 +355,88 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   card: {
-     width: '100%',
-    height: '90%',
-    backgroundColor: 'white',
-    borderRadius: 16,
+    width: '100%',
+    height: '100%', // Cambiato da 90% a 100% per riempire lo spazio
+    backgroundColor: 'black', // Sfondo nero per evitare flash bianchi
+    borderRadius: 20, // Aumentato raggio
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-    margin: 8,
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 8,
+    overflow: 'hidden', // Importante per tagliare l'immagine ai bordi
   },
   movieImage: {
     width: '100%',
-    height: '75%',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    
+    height: '100%', // L'immagine ora occupa tutta la card
+    position: 'absolute', // Posizionamento assoluto
+  },
+  gradientOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '50%', // Il gradiente occupa la metà inferiore
+    justifyContent: 'flex-end',
+    paddingBottom: 20,
+  },
+  movieGenre: {
+    borderColor: 'white',
+    borderWidth: 1,
+    borderRadius: 10,
+  },
+  movieGenreText: {
+    fontSize: 16,
+    color: '#ecf0f1',
+    fontWeight: '600',
+    backgroundColor: 'rgba(52, 73, 94, 0.6)',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
   movieInfo: {
-    padding: 12,
+    padding: 20,
   },
   movieTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 6,
+    fontSize: 28, // Titolo più grande
+    fontWeight: '800',
+    marginBottom: 8,
+    color: 'white', // Testo bianco
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10
   },
   movieMeta: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginBottom: 12,
+    gap: 15, // Spazio tra gli elementi
   },
   movieRating: {
-    fontSize: 14,
-    color: '#f5c518',
+    fontSize: 16,
+    color: '#f1c40f', // Giallo oro più acceso
     fontWeight: 'bold',
   },
   movieDate: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 16,
+    color: '#ecf0f1', // Bianco sporco
+    fontWeight: '600',
   },
   movieOverview: {
-    fontSize: 13,
-    color: '#666',
-    lineHeight: 18,
+    fontSize: 15,
+    color: '#bdc3c7', // Grigio chiaro
+    lineHeight: 22,
+    fontWeight: '500',
   },
-   cardStyle: {
-    width: '90%',
-    height: '90%',
-    borderRadius: 15,
+  cardStyle: {
+    width: '95%', // Card leggermente più larga nello swiper
+    height: '90%', // Altezza dello swiper
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },

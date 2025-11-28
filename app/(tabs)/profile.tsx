@@ -4,7 +4,7 @@ import { AntDesign } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { collection, doc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -207,13 +207,16 @@ export default function EmailAuthScreen() {
 
   const handleInviteUser = async (userData: {email: string, uid: string}) => {
     try {
-      const docRef = setDoc(doc(firestore, "invites", userData.uid), {
+      // Usa addDoc invece di setDoc per generare un ID univoco automaticamente
+      const docRef = await addDoc(collection(firestore, "invites"), {
         fromUid: user.uid,
+        fromEmail: user.email,
         toUid: userData.uid,
+        toEmail: userData.email,
         status: "pending",
         createdAt: serverTimestamp(),
-    });
-      console.log(`Invito inviato a: ${userData.email}`);
+      });
+      console.log(`Invito inviato a: ${userData.email} con ID: ${docRef.id}`);
       setSearchQuery("");
       setSearchResults([]);
       setShowInvitePanel(false);
